@@ -1,21 +1,22 @@
 # <center>使用IFB进行Ingress流量控制
+  
 ----
 
-##流量控制
+## 流量控制
 
 Linux的Traffic Control（以下简称TC）是linux内核中内置的流量控制模块，通过该模块可以进行网络端口的收发流量控制，包括流量限速、流量整形、模拟丢包等功能。TC主要通过三种元素——qdisc、class、filter组成的树状结构来管理多种流量控制规则。
 
-####QDISC
+#### QDISC
 
 QDISC即队列规则，TC通过各种不同的队列规则来实现数据包的收发控制。队列规则主要分为两大类——可分类队列和不可分类队列。可分类的队列通过filter（或ToS、priority）的过滤后可以分为不同的class，从而为每个class单独配置队列规则。与之相反，不可分类队列只能应用在叶子结点，无法继续分类。
 
-######可分类队列
+###### 可分类队列
 
 + cbq：       class based queueing，基于类别的队列
 + htb：       hierarchy token bucket，分层令牌桶
 + prio：      优先队列
 
-######不可分类队列
+###### 不可分类队列
 
 + [p|b]fifo： 以包或字节为单位的先入先出队列
 + pfifo_fast：默认的先入先出队列
@@ -23,18 +24,18 @@ QDISC即队列规则，TC通过各种不同的队列规则来实现数据包的�
 + red：       random early detection，随机早期检测
 + sfq：       stochastic fairness queuing，随机公平队列
 
-####CLASS
+#### CLASS
 
 类(Class)组成一个树，每个类都只有一个父类，而一个类可以有多个子类。某些qdisc(例如：cbq和htb)允许在运行时动态添加类，而其它的qdisc(例如：prio)不允许动态建立类。
 允许动态添加类的qdisc可以有零个或者多个子类，由它们为数据包排队。
 此外，每个类都有且仅有一个叶子qdisc。默认情况下，这个叶子qdisc使用pfifo_fast的方式排队。我们也可以使用其它类型的qdisc代替这个默认的qdisc，而且这个qdisc可以再次分类。
 
-####FILTER
+#### FILTER
 
 过滤器（filter）通过匹配数据包头部的域或iptable的标记对数据包进行分类，将数据包分发给匹配的子类。如果所有子类都不匹配，过滤器会将数据包发送给当前类的叶子qdisc。
 除了过滤器以外，有些qdisc还支持ToS（服务类型）分类方式。
 
-####ingress & egress
+#### Ingress & Egress
 
 TC默认的egress根结点是1:0，而ingress结点需要通过如下命令进行添加才可以进行操作。
 
@@ -48,7 +49,7 @@ ingress结点的标号为ffff:0，这个结点无法添加子类，只能通过�
       u32 match ip src 0.0.0.0/0 \
       police rate 2048kbps burst 1m drop flowid :1
 
-####TC命令实例
+#### TC命令实例
 
     //在根结点添加htb队列，未分类的包默认发送给1:1子类
     tc qdisc add dev eth0 root handle 1:htb default 1
@@ -63,12 +64,12 @@ ingress结点的标号为ffff:0，这个结点无法添加子类，只能通过�
     */
     tc filter add dev eth0 protocol ip parent 1:0 prio 1 u32 match ip dport 80 0xffff flowid 1:1
 
-##IFB
+## IFB
 
 IFB的全称是Intermediate Functional Block，即中间功能块。由于TC只能对ingress流量进行限流，当我们需要对ingress流量进行整形时，就需要借助ifb进行转发。通过将ingress重定向至ifb，再于ifb的egress处添加队列规则，就能够实现对ingress的整形。
 此外，在egress处也可以加入一个ifb进行映射，达到同样的配置应用于多块网卡的效果。
 
-######Redirect & Mirror
+###### Redirect & Mirror
 
 ifb的两种主要用法分别通过redirect和mirror实现。当我们需要对ingress整形时，采用redirect方式对数据包进行重定向发送，这样避免了原有的入口流量和经过整形后的入口流量重复接收。redirect参数下，该命令会将原有的ingress全部转发至ifb device，而不会发送给最初的接受网卡。
 当我们需要监听流量时，就可以采用mirror参数。这种情况下，ingress会被复制一份发送到ifb device以供后续的监测处理，同时不会影响到正常的ingress接收。
@@ -78,7 +79,7 @@ ifb的两种主要用法分别通过redirect和mirror实现。当我们需要对
       match u32 0 0 flowid 1:1 \
       action mirred egress [redirect|mirror] dev ifb0
 
-####ifb配置实例
+#### ifb配置实例
 
 在远程配置ifb时，千万注意在配置完ifb的队列后再重定向ingress，否则可能会因为入口流量被重定向而无法连接远程服务器。
 
@@ -96,7 +97,7 @@ ifb的两种主要用法分别通过redirect和mirror实现。当我们需要对
     //将ingress重定向至ifb
     tc filter add dev eth0 parent fff: protocol ip u32 match u32 0 0 flowid 1:1 action mirred egress redirect dev ifb0
 
-######参考资料：
+###### 参考资料：
 
 + [Linux TC(Traffic Control) 简介](https://blog.csdn.net/zhaobryant/article/details/38797655)
 + [tc(8) - Linux manual page](http://www.man7.org/linux/man-pages/man8/tc.8.html)
